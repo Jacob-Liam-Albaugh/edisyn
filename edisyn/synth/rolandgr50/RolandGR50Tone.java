@@ -137,7 +137,10 @@ public class RolandGR50Tone extends Synth
         return bank;               // Preset A/B unchanged
         }
 
-    int part = PART_1;
+    // Multi-Timbre Part 1 is the default because MIDI keyboard playback in Multi-Timbre
+    // mode uses Tone Temp slot 12 (04 17 08).  Guitar-mode users should switch to the
+    // appropriate String/Tone slot via the Edit menu.
+    int part = MULTI_PART_1;
     boolean altLayout = false;
 
     public static final String ALT_LAYOUT_KEY = "AltLayout";
@@ -334,7 +337,7 @@ public class RolandGR50Tone extends Synth
             if (i == 12) menu.addSeparator();  // separator before Multi-Timbre slots
             final int slotPart = slotIndices[i];
             JRadioButtonMenuItem m = new JRadioButtonMenuItem("Edit Tone Slot: " + displayLabels[i]);
-            if (i == 0) m.setSelected(true);
+            if (slotPart == part) m.setSelected(true);
             m.addActionListener(new ActionListener()
                 {
                 public void actionPerformed(ActionEvent e)
@@ -377,7 +380,7 @@ public class RolandGR50Tone extends Synth
                     byte[] msg = buildMemoryToneRequest(slot);
                     tryToSendSysex(msg);
                     // Wait between requests so the GR-50 has time to respond
-                    try { Thread.sleep(300); }
+                    try { Thread.sleep(500); }
                     catch (InterruptedException ex) { Thread.currentThread().interrupt(); break; }
                     }
                 System.out.println("GR-50: === All 64 Internal/Card tone requests sent ===");
@@ -1117,7 +1120,12 @@ public class RolandGR50Tone extends Synth
         }
 
 
-    public boolean getSendsParametersAfterNonMergeParse() { return true; }
+    // Returning true here causes a MIDI flood: every incoming RQ1 response triggers
+    // sendAllParameters() (a 256-byte DT1 outbound), which saturates bandwidth when
+    // bulk-requesting tones and causes InvalidMidiDataException in the MIDI stack.
+    // Tone Temp is updated explicitly via getSendsParametersAfterWrite() (after Write
+    // to Patch) and via the user clicking "Send to Current Patch" (Cmd+U).
+    public boolean getSendsParametersAfterNonMergeParse() { return false; }
 
 
     public int parse(byte[] data, boolean fromFile)
@@ -1376,6 +1384,48 @@ public class RolandGR50Tone extends Synth
     // This delay only matters for Preset A/B/Rhythm tones (bank 0/1/3); Internal/Card
     // tones (bank 2) are requested directly from Tone Memory and don't use this path.
     public int getPauseAfterChangePatch() { return 500; }
+
+    // Suppress the default write-pause; our writeAllParameters() override controls all timing.
+    public int getPauseAfterWritePatch() { return 0; }
+
+    // Suppress the default post-write sendAllParameters(); our override sends in the right order.
+    public boolean getSendsParametersAfterWrite() { return false; }
+
+    // Custom write sequence for the GR-50:
+    //
+    //   1. DT1 → Tone Memory (permanent save at 08 N*2 00)
+    //   2. 300 ms  — let the GR-50 commit the EEPROM/RAM write
+    //   3. DT1 → Tone Temp   (04 part*246) — IMMEDIATE active-voice update
+    //   4. 100 ms
+    //   5. DT1 → Timbre Temp (03 00 part*16) — update the display reference
+    //
+    // Why Tone Temp BEFORE Timbre Temp?
+    // Writing Timbre Temp causes the GR-50 to asynchronously reload Tone Temp from
+    // Tone Memory. If we write to Tone Temp AFTER Timbre Temp, that reload may race
+    // our DT1 and overwrite it. By writing Tone Temp first and Timbre Temp last,
+    // any subsequent reload reads from Tone Memory (which already has our new data),
+    // so Tone Temp ends up correct regardless of whether the reload happens.
+    @Override
+    public void writeAllParameters(Model model)
+        {
+        beforeWriteAllParametersHook();
+
+        // Step 1: Permanent save to Tone Memory
+        System.out.println("GR-50: writeAllParameters — step 1: Tone Memory");
+        tryToSendMIDI(emitAll(model, false, false));
+        simplePause(300);
+
+        // Step 2: Direct Tone Temp write — active voice updates on next note-on
+        System.out.println("GR-50: writeAllParameters — step 2: Tone Temp (immediate voice)");
+        sendAllParametersInternal();
+        simplePause(100);
+
+        // Step 3: Timbre Temp write — updates the display reference on the GR-50
+        System.out.println("GR-50: writeAllParameters — step 3: Timbre Temp (display reference)");
+        changePatch(model);
+
+        afterWriteAllParametersHook();
+        }
 
     public Model getNextPatchLocation(Model model)
         {
