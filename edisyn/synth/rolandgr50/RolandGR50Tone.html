@@ -1,0 +1,104 @@
+<html><head></head>
+<body>
+
+<h1>Roland GR-50</h1>
+<h2>Tone Editor</h2>
+
+<p>This patch editor is designed for the Roland GR-50 Guitar Synthesizer.  The GR-50 uses LA (Linear Arithmetic) synthesis, the same engine as the Roland D-110, D-10, and MT-32.  A <b>Tone</b> is the fundamental sound unit of the GR-50, composed of up to four Partials (oscillators), each with its own Wave Generator, Pitch, Filter (TVF), and Amplifier (TVA) sections.
+
+<br><br><h3>GR-50 Operating Modes</h3>
+
+<p>The GR-50 has two completely independent operating modes that both draw from the same pool of 256 Tones:
+
+<p><b>Guitar mode</b> (GK-2 hexaphonic pickup &rarr; GR-50):
+<ul>
+<li>A <b>Patch</b> (64 stored) is the top-level guitar preset, selected from the GR-50's front panel.  Each Patch contains:
+  <ul>
+  <li><b>Patch Common</b> — Patch name, reverb, velocity curve.
+  <li><b>Patch Internal</b> — Assigns a 1st Tone and a 2nd Tone to each of up to six strings, by Tone bank and number (e.g. a27, b09).  Also controls per-string sensitivity and mixing.
+  <li><b>Patch External</b> — Controls external MIDI Branch settings (MIDI channel, mode, etc.).
+  </ul>
+</ul>
+
+<p><b>Multi-Timbre MIDI mode</b> (external MIDI controller &rarr; MIDI IN):
+<ul>
+<li>The GR-50 acts as a conventional multi-timbral sound module with two Synthesizer Parts (Part 1, Part 2) and a Rhythm Part.
+<li>A <b>Timbre</b> is assigned to each Synthesizer Part.  The GR-50 stores <b>256 Timbres</b> (Internal Group A: I-A1–I-A64, Internal Group B: I-B1–I-B64, plus 128 more on an optional memory card).  Each Timbre contains a Tone reference plus performance parameters: Key Shift, Fine Tune, Bender Range, Assign Mode, and Reverb Switch.
+<li>Sending a MIDI Program Change to a Part selects one of the 256 Timbres for that Part, which in turn determines which Tone plays.
+</ul>
+
+<p>Both modes reference the same 256 Tones: 128 Preset ROM tones (Preset A: a01–a64, Preset B: b01–b64), 64 writable Internal/Card tones (i01–i64), and 64 Preset Rhythm tones (r01–r64).
+
+<br><br><h3>GR-50 Layers at a Glance</h3>
+
+<ul>
+<li>A <b>Patch</b> is a guitar preset: it references Tones by bank and number for each string.
+<li>A <b>Tone</b> (what this editor edits) is an LA synthesis voice — up to four Partials — exactly the same as a D-110 Tone.
+<li>A <b>Timbre</b> (not edited here) is a Multi-Timbre MIDI keyboard concept: a stored combination of a Tone reference plus performance parameters, used when playing the GR-50 from an external MIDI controller.  Timbres are <i>not</i> guitar per-string settings.
+</ul>
+
+<p>The eight tone temp slots accessible here are labelled P1–P8 by the GR-50's PG-10 programmer and correspond to:
+<ul>
+<li>P1 = String 1, 1st Tone
+<li>P2 = String 1, 2nd Tone
+<li>P3 = String 2, 1st Tone
+<li>P4 = String 2, 2nd Tone
+<li>P5 = String 3, 1st Tone
+<li>P6 = String 3, 2nd Tone
+<li>P7 = String 4, 1st Tone
+<li>P8 = String 4, 2nd Tone
+</ul>
+
+<br><br><h3>Communicating with Edisyn</h3>
+
+<p>Set the Synth ID to match the Exclusive Unit Number in the GR-50's System Setup (the default is 17).  The GR-50 uses Model ID 0x16, the same as the D-110.  Make sure Memory Protect is OFF in the System Setup before attempting to write patches.
+
+<p>By default, Edisyn communicates with <b>String 1 / 1st Tone (P1)</b>.  You can change this via the <b>GR-50</b> menu to target a different tone slot.
+
+<p><b>Requesting a Tone (Request Patch):</b>  When you use Edisyn's <i>Request Patch</i> command, you specify a <b>Tone Bank</b> (Preset A, Preset B, Internal/Card, or Rhythm) and a <b>Tone Number</b> (1–64).  Edisyn loads that Tone directly into the GR-50's temp memory and reads it back — this is a Tone bank navigation, <i>not</i> a Timbre or Patch navigation.  For example, requesting Preset A, Tone 27 loads the tone named <i>ftRhodes</i> from the GR-50's ROM.
+
+<p><b>Finding a Tone by name on the GR-50 hardware:</b>  The GR-50's Play mode display shows <i>Patch</i> names (e.g. "Pedal Steel"), not Tone names.  To browse or verify individual Tone names on the unit, press <b>INT</b> to enter Internal edit, then navigate to <b>Tone Edit</b> mode and step through the bank you want.  For example, Preset A Tone 27 (<i>ftRhodes</i>) is found under Preset A in Tone Edit, not under any Patch name.
+
+<br><br><h3>About the GR-50 Menu</h3>
+
+<ul>
+<li>This editor has two layouts: a standard layout (one partial per tab) and an <b>Alternate Layout</b> (grouped by section across all four partials).  Select the layout from the GR-50 menu; the choice takes effect the next time you open an editor window.
+
+<li>Use <b>Edit Tone Slot: String N, N Tone (PN)</b> to choose which of the eight tone temp slots you are editing and requesting.  P1 (String 1 / 1st Tone) is the default.
+</ul>
+
+<br><br><h3>Differences from the D-110 Tone Editor</h3>
+
+<ul>
+<li><b>WG Pitch Key Follow</b> on the GR-50 is extended from 17 values (0–16) to 19 values (0–18), adding key follow values 3 and 4 beyond the D-110's maximum of 2.
+<li>The GR-50 has four Tone banks: Preset A (a), Preset B (b), Internal/Card (i), Rhythm (r).  Inserting a memory card replaces the Internal bank; only this bank is writable.
+<li>The GR-50 SysEx uses the same model ID (0x16) and address map as the D-110, so Tone SysEx files produced by D-110 editors are generally compatible.
+</ul>
+
+<br><br><h3>Tone Banks</h3>
+
+<ul>
+<li><b>Preset A (a)</b> — Factory preset bank A (ROM, read-only), 64 tones.
+<li><b>Preset B (b)</b> — Factory preset bank B (ROM, read-only), 64 tones.
+<li><b>Internal/Card (i)</b> — User RAM or inserted memory card (writable), 64 tones.
+<li><b>Rhythm (r)</b> — Factory rhythm tones (ROM, read-only).
+</ul>
+
+<br><br><h3>Gotchas</h3>
+
+<ul>
+<li>The GR-50 operates primarily in a guitar-specific way: MIDI notes and pitch come from the GK-2 hexaphonic pickup rather than a keyboard.  When testing tones via MIDI, send notes to the GR-50's Control Channel and ensure a Branch's MIDI Mode is set correctly in the Patch settings.
+<li>The PCM wave list shown in this editor is based on the Roland D-110/D-10 wave set, which shares significant overlap with the GR-50.  Some wave names may differ on your unit.
+<li>The 256 Timbres shown on page 42 of the GR-50 manual are a Multi-Timbre MIDI keyboard feature — they are <i>not</i> the same as guitar Patches, and this editor does not navigate by Timbre number.  If you want to edit the Tone that a specific Timbre references, look up the Tone bank and number stored in that Timbre (using the GR-50's Timbre Edit mode), then request that Tone directly in Edisyn.
+</ul>
+
+<p><table border=0 cellpadding=0 cellspacing=5>
+<tr>
+<td align=right>Based on&nbsp;&nbsp;&nbsp;
+<td>Roland D-110 Tone Editor by Sean Luke
+<tr>
+<td align=right>Date&nbsp;&nbsp;&nbsp;
+<td>May 2026
+</table>
+
+</body></html>

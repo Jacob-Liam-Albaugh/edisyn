@@ -68,6 +68,7 @@ edisyn.synth.redsounddarkstar.RedSoundDarkStar	Red Sound	Red Sound DarkStar
 #edisyn.synth.rolandalphajuno.RolandAlphaJuno	Roland	Roland Alpha Juno 1 / 2 / MKS-50
 edisyn.synth.rolandd110.RolandD110Tone	Roland	Roland D-110 [Tone]
 edisyn.synth.rolandd110.RolandD110Multi	Roland	Roland D-110 [Multi]
+edisyn.synth.rolandgr50.RolandGR50Tone	Roland	Roland GR-50 [Tone]
 edisyn.synth.rolandjv880.RolandJV880	Roland	Roland JV-80 / 880
 edisyn.synth.rolandjv880.RolandJV880Multi	Roland	Roland JV-80 / 880 [Multi]
 edisyn.synth.rolandjv880.RolandJV880Drum	Roland	Roland JV-80 / 880 [Drum]
