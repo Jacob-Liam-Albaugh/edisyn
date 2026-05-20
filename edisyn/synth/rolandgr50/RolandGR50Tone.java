@@ -143,6 +143,11 @@ public class RolandGR50Tone extends Synth
     int part = MULTI_PART_1;
     boolean altLayout = false;
 
+    // When true, getSendsParametersAfterNonMergeParse() returns false so that the
+    // bulk dump (dumpAllInternalToneNames) doesn't flood the GR-50 with 64 Tone Temp
+    // writes.  Set to true only during the bulk dump background thread.
+    volatile boolean suppressAutoSend = false;
+
     public static final String ALT_LAYOUT_KEY = "AltLayout";
 
     // Identical sizes to D-110: TEMP = 246 data bytes, MEMORY = 256 data bytes
@@ -374,16 +379,28 @@ public class RolandGR50Tone extends Synth
             {
             public void run()
                 {
-                for (int n = 0; n < 64; n++)
+                suppressAutoSend = true;
+                try
                     {
-                    final int slot = n;
-                    byte[] msg = buildMemoryToneRequest(slot);
-                    tryToSendSysex(msg);
-                    // Wait between requests so the GR-50 has time to respond
-                    try { Thread.sleep(500); }
-                    catch (InterruptedException ex) { Thread.currentThread().interrupt(); break; }
+                    for (int n = 0; n < 64; n++)
+                        {
+                        byte[] msg = buildMemoryToneRequest(n);
+                        tryToSendSysex(msg);
+                        // 500ms gap: response arrives ~50ms after the request, so by
+                        // the time we send the next one the previous parse is done.
+                        try { Thread.sleep(500); }
+                        catch (InterruptedException ex) { Thread.currentThread().interrupt(); break; }
+                        }
+                    // Extra pause to let the last response arrive and parse before
+                    // we re-enable auto-send.
+                    try { Thread.sleep(600); }
+                    catch (InterruptedException ex) { /* ignore */ }
+                    System.out.println("GR-50: === All 64 Internal/Card tone requests sent ===");
                     }
-                System.out.println("GR-50: === All 64 Internal/Card tone requests sent ===");
+                finally
+                    {
+                    suppressAutoSend = false;
+                    }
                 }
             }, "GR-50-InternalDump").start();
         }
@@ -1120,11 +1137,9 @@ public class RolandGR50Tone extends Synth
         }
 
 
-    // Returning true here causes a MIDI flood: every incoming RQ1 response triggers
-    // sendAllParameters() (a 256-byte DT1 outbound), which saturates bandwidth when
-    // bulk-requesting tones and causes InvalidMidiDataException in the MIDI stack.
-    // Tone Temp is updated explicitly via getSendsParametersAfterWrite() (after Write
-    // to Patch) and via the user clicking "Send to Current Patch" (Cmd+U).
+    // Synth.java only calls sendAllParameters() via this hook when result==PARSE_IGNORE,
+    // which never happens for our parse() (we return PARSE_SUCCEEDED).  The auto-send
+    // after Tone Memory loads is handled directly in parse() via invokeLater instead.
     public boolean getSendsParametersAfterNonMergeParse() { return false; }
 
 
@@ -1184,6 +1199,37 @@ public class RolandGR50Tone extends Synth
                 }
             }
         revise();
+
+        // When a tone is loaded from Tone Memory (AA=0x08, i.e. patch navigation or
+        // explicit request), activate it on the GR-50 using the same sequence as
+        // writeAllParameters(): write to Tone Memory first, pause 300 ms, then write
+        // to Tone Temp.  The GR-50 appears to require the Tone Memory write as a
+        // trigger before it will honour a subsequent Tone Temp DT1 overlay; sending
+        // Tone Temp alone (without the prior Tone Memory write) is silently ignored.
+        // Run in a background thread so the 300 ms pause never blocks the EDT.
+        // Suppressed during the bulk dump to avoid flooding 64 writes.
+        if (!fromFile && AA == 0x08 && !suppressAutoSend)
+            {
+            new Thread(new Runnable()
+                {
+                public void run()
+                    {
+                    // 100 ms grace period so Synth.java's MIDI-send restore
+                    // (called from the receive thread after parse() returns)
+                    // completes before we start transmitting.
+                    try { Thread.sleep(100); }
+                    catch (InterruptedException ex) { Thread.currentThread().interrupt(); return; }
+
+                    System.out.println("GR-50: AUTO-SEND step 1 – Tone Memory echo, getSendMIDI()=" + getSendMIDI());
+                    tryToSendMIDI(emitAll(getModel(), false, false));
+                    simplePause(300);
+                    System.out.println("GR-50: AUTO-SEND step 2 – Tone Temp, getSendMIDI()=" + getSendMIDI());
+                    sendAllParametersInternal();
+                    System.out.println("GR-50: AUTO-SEND done");
+                    }
+                }, "GR50-AutoSend").start();
+            }
+
         return PARSE_SUCCEEDED;
         }
 
@@ -1302,13 +1348,15 @@ public class RolandGR50Tone extends Synth
     public byte[] requestDump(Model tempModel)
         {
         if (tempModel == null) tempModel = getModel();
-        // Multi-Timbre parts have no Timbre Temp — just read what's currently in their Tone Temp.
-        if (part >= MULTI_PART_1)
-            return requestCurrentDump();
-        // Internal/Card tones: read directly from Tone Memory (reliable).
+        // Internal/Card tones: read directly from Tone Memory (08 N*2 00).
+        // This works regardless of which Tone Temp slot (part) we're targeting and
+        // is the only reliable way to navigate i01…i64 in Multi-Timbre mode.
+        // After parse(), getSendsParametersAfterNonMergeParse()=true pushes the
+        // loaded data to Tone Temp so the GR-50 plays it immediately.
         if (tempModel.get("bank") == 2)
             return buildMemoryToneRequest(tempModel.get("number"));
-        // Preset A/B/Rhythm tones: read from Tone Temp after changePatch() loaded it.
+        // Preset A/B/Rhythm tones: load into Tone Temp via Timbre Temp (Guitar mode only;
+        // Multi-Timbre parts 12/13 skip Timbre Temp writes since they have none).
         return requestCurrentDump();
         }
 
