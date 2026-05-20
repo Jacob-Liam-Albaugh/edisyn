@@ -988,8 +988,9 @@ public class RolandGR50Tone extends Synth
         else if (key.equals("name"))
             {
             byte[] data = new byte[10];
+            java.util.Arrays.fill(data, (byte)' ');  
             String name = model.get(key, "Untitled");
-            for (int i = 0; i < name.length(); i++)
+            for (int i = 0; i < name.length() && i < 10; i++)
                 data[i] = (byte)(name.charAt(i));
             return data;
             }
