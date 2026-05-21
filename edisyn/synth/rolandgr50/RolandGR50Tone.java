@@ -143,10 +143,17 @@ public class RolandGR50Tone extends Synth
     int part = MULTI_PART_1;
     boolean altLayout = false;
 
-    // When true, getSendsParametersAfterNonMergeParse() returns false so that the
-    // bulk dump (dumpAllInternalToneNames) doesn't flood the GR-50 with 64 Tone Temp
-    // writes.  Set to true only during the bulk dump background thread.
+    // When true, parse() will not spawn a GR50-AutoSend thread.  Used both during
+    // the bulk dump (to suppress 64 Tone Temp writes) and inside the auto-send
+    // thread itself (to absorb the DT1 echo that comes back on the MIDI input
+    // when we write to Tone Memory, which would otherwise re-trigger the loop).
     volatile boolean suppressAutoSend = false;
+
+    // Prevents more than one GR50-AutoSend thread from running concurrently.
+    // A second navigation while the first auto-send is still in flight is
+    // harmless: the editor model already has the latest data, and the next
+    // user-initiated navigation will trigger a fresh auto-send.
+    volatile boolean autoSendInProgress = false;
 
     public static final String ALT_LAYOUT_KEY = "AltLayout";
 
@@ -1204,29 +1211,52 @@ public class RolandGR50Tone extends Synth
         // When a tone is loaded from Tone Memory (AA=0x08, i.e. patch navigation or
         // explicit request), activate it on the GR-50 using the same sequence as
         // writeAllParameters(): write to Tone Memory first, pause 300 ms, then write
-        // to Tone Temp.  The GR-50 appears to require the Tone Memory write as a
-        // trigger before it will honour a subsequent Tone Temp DT1 overlay; sending
-        // Tone Temp alone (without the prior Tone Memory write) is silently ignored.
-        // Run in a background thread so the 300 ms pause never blocks the EDT.
-        // Suppressed during the bulk dump to avoid flooding 64 writes.
-        if (!fromFile && AA == 0x08 && !suppressAutoSend)
+        // to Tone Temp.  The GR-50 requires the Tone Memory write as a trigger before
+        // it will honour a subsequent Tone Temp DT1 overlay.
+        //
+        // Guard 1 (suppressAutoSend): true during bulk dump and during the Tone Memory
+        //   write step itself, so the MIDI loopback echo of our own DT1 does NOT
+        //   re-enter parse() and spawn another thread (infinite-loop prevention).
+        // Guard 2 (autoSendInProgress): only one thread at a time; rapid navigation
+        //   only updates the editor model — the next manual navigation triggers a fresh
+        //   auto-send with the latest data.
+        if (!fromFile && AA == 0x08 && !suppressAutoSend && !autoSendInProgress)
             {
+            autoSendInProgress = true;
             new Thread(new Runnable()
                 {
                 public void run()
                     {
-                    // 100 ms grace period so Synth.java's MIDI-send restore
-                    // (called from the receive thread after parse() returns)
-                    // completes before we start transmitting.
-                    try { Thread.sleep(100); }
-                    catch (InterruptedException ex) { Thread.currentThread().interrupt(); return; }
+                    try
+                        {
+                        // 100 ms grace period so Synth.java's MIDI-send restore
+                        // (called from the receive thread after parse() returns)
+                        // completes before we start transmitting.
+                        try { Thread.sleep(100); }
+                        catch (InterruptedException ex) { Thread.currentThread().interrupt(); return; }
 
-                    System.out.println("GR-50: AUTO-SEND step 1 – Tone Memory echo, getSendMIDI()=" + getSendMIDI());
-                    tryToSendMIDI(emitAll(getModel(), false, false));
-                    simplePause(300);
-                    System.out.println("GR-50: AUTO-SEND step 2 – Tone Temp, getSendMIDI()=" + getSendMIDI());
-                    sendAllParametersInternal();
-                    System.out.println("GR-50: AUTO-SEND done");
+                        // Suppress auto-send BEFORE the Tone Memory write so the
+                        // MIDI loopback echo of that DT1 does not re-trigger parse().
+                        suppressAutoSend = true;
+                        try
+                            {
+                            System.out.println("GR-50: AUTO-SEND step 1 – Tone Memory echo, getSendMIDI()=" + getSendMIDI());
+                            tryToSendMIDI(emitAll(getModel(), false, false));
+                            simplePause(300);
+                            }
+                        finally
+                            {
+                            suppressAutoSend = false;
+                            }
+
+                        System.out.println("GR-50: AUTO-SEND step 2 – Tone Temp, getSendMIDI()=" + getSendMIDI());
+                        sendAllParametersInternal();
+                        System.out.println("GR-50: AUTO-SEND done");
+                        }
+                    finally
+                        {
+                        autoSendInProgress = false;
+                        }
                     }
                 }, "GR50-AutoSend").start();
             }
